@@ -1,20 +1,28 @@
 import ava from 'ava';
-
-import Pilot from '../../../src/assets/scripts/client/aircraft/Pilot/Pilot';
+import sinon from 'sinon';
+import AircraftModel from '../../../src/assets/scripts/client/aircraft/AircraftModel';
+import { airportModelFixture } from '../../fixtures/airportFixtures';
 import {
-    fmsArrivalFixture,
-    modeControllerFixture
-} from '../../fixtures/aircraftFixtures';
+    createNavigationLibraryFixture,
+    resetNavigationLibraryFixture
+} from '../../fixtures/navigationLibraryFixtures';
+import { ARRIVAL_AIRCRAFT_INIT_PROPS_MOCK } from '../_mocks/aircraftMocks';
 
-const currentHeadingMock = -1.6302807335875378;
+ava.beforeEach(() => {
+    createNavigationLibraryFixture();
+});
+
+ava.afterEach(() => {
+    resetNavigationLibraryFixture();
+});
 
 ava('.maintainPresentHeading() sets the #mcp with the correct modes and values', (t) => {
-    const pilot = new Pilot(modeControllerFixture, fmsArrivalFixture);
+    const aircraftModel = new AircraftModel(ARRIVAL_AIRCRAFT_INIT_PROPS_MOCK);
 
-    pilot.maintainPresentHeading(currentHeadingMock);
+    aircraftModel.pilot.maintainPresentHeading(aircraftModel);
 
-    t.true(pilot._mcp.headingMode === 'HOLD');
-    t.true(pilot._mcp.heading === -1.6302807335875378);
+    t.true(aircraftModel.pilot._mcp.headingMode === 'HOLD');
+    t.true(aircraftModel.pilot._mcp.heading === aircraftModel.heading);
 });
 
 ava('.maintainPresentHeading() returns a success message when finished', (t) => {
@@ -25,8 +33,25 @@ ava('.maintainPresentHeading() returns a success message when finished', (t) => 
             say: 'fly present heading'
         }
     ];
-    const pilot = new Pilot(modeControllerFixture, fmsArrivalFixture);
-    const result = pilot.maintainPresentHeading(currentHeadingMock);
+    const aircraftModel = new AircraftModel(ARRIVAL_AIRCRAFT_INIT_PROPS_MOCK);
+    const result = aircraftModel.pilot.maintainPresentHeading(aircraftModel);
 
     t.deepEqual(result, expectedResult);
+});
+
+ava('.maintainPresentHeading() calls .cancelApproachClearance()', (t) => {
+    const approachTypeMock = 'ils';
+    const runwayModelMock = airportModelFixture.getRunway('19L');
+    const altitudeMock = 7000;
+    const headingMock = 3.839724354387525; // 220 in degrees
+    const aircraftModel = new AircraftModel(ARRIVAL_AIRCRAFT_INIT_PROPS_MOCK);
+    const cancelApproachClearanceSpy = sinon.spy(aircraftModel.pilot, 'cancelApproachClearance');
+
+    aircraftModel.pilot.conductInstrumentApproach(approachTypeMock, runwayModelMock, altitudeMock, headingMock);
+
+    t.true(aircraftModel.pilot.hasApproachClearance);
+
+    aircraftModel.pilot.maintainPresentHeading(aircraftModel);
+
+    t.true(cancelApproachClearanceSpy.called);
 });

@@ -1,4 +1,5 @@
-import _has from 'lodash/has';
+import _isNil from 'lodash/isNil';
+import EventBus from '../lib/EventBus';
 import { GAME_OPTION_VALUES } from '../constants/gameOptionConstants';
 
 /**
@@ -12,12 +13,37 @@ export default class GameOptions {
      * @constructor
      */
     constructor() {
+        /**
+         * @property _eventBus
+         * @type EventBus
+         * @private
+         */
+        this._eventBus = EventBus;
+
+        /**
+         * @property _options
+         * @type {Object}
+         * @default {}
+         * @private
+         */
         this._options = {};
+
+        /**
+         * Model properties will be added for each game option
+         * dynamically via `.addGameOptions()`
+         *
+         * @property {*}
+         * @type {string}
+         *
+         * this[OPTION_NAME] = OPTION_VALUE;
+         */
 
         this.addGameOptions();
     }
 
     /**
+     * Add available game options to `_options` dictionary
+     *
      * @for GameOptions
      * @method addGameOptions
      */
@@ -32,46 +58,72 @@ export default class GameOptions {
     /**
      * @for GameOptions
      * @method addOption
+     * @param optionProps {object}
      */
-    addOption(data) {
-        const optionStorageName = `zlsa.atc.option.${data.name}`;
-        this._options[data.name] = data;
-        let dataName = data.defaultValue;
+    addOption(optionProps) {
+        const optionStorageKey = this.buildStorageName(optionProps.name);
+        const storedOptionValue = global.localStorage.getItem(optionStorageKey);
+        this._options[optionProps.name] = optionProps;
+        let optionValue = optionProps.defaultValue;
 
-        if (_has(localStorage, optionStorageName)) {
-            dataName = localStorage[optionStorageName];
+        if (!_isNil(storedOptionValue)) {
+            optionValue = storedOptionValue;
         }
 
-        this[data.name] = dataName;
+        this[optionProps.name] = optionValue;
     }
 
     /**
      * @for GameOptions
      * @method getDescriptions
+     * @return {object}
      */
     getDescriptions() {
         return this._options;
     }
 
     /**
+     * Gets the value of a given game option
+     *
      * @for GameOptions
-     * @method get
+     * @method getOptionByName
      * @param name {string}
+     * @return {object}
      */
-    get(name) {
+    getOptionByName(name) {
         return this[name];
     }
 
     /**
+     * Sets a game option to a given value
+     *
      * @for GameOptions
-     * @method set
-     * @param name {string}
-     * @param value
+     * @method setOptionByName
+     * @param name {string} name of the option to change
+     * @param value {string} value to set the option to
      */
-    set(name, value) {
-        localStorage[`zlsa.atc.option.${name}`] = value;
+    setOptionByName(name, value) {
         this[name] = value;
+        const optionStorageKey = this.buildStorageName(name);
+
+        global.localStorage.setItem(optionStorageKey, value);
+
+        if (this._options[name].onChangeEventHandler) {
+            this._eventBus.trigger(this._options[name].onChangeEventHandler, value);
+        }
 
         return value;
+    }
+
+    /**
+     * Build a string that can be used as a key for localStorage data
+     *
+     * @for GameOptions
+     * @method buildStorageName
+     * @param optionName {string}
+     * @return {string}
+     */
+    buildStorageName(optionName) {
+        return `zlsa.atc.option.${optionName}`;
     }
 }

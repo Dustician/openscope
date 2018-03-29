@@ -11,6 +11,15 @@
  */
 export const EVENT = {
     /**
+     * Add an aircraft to the simulation
+     *
+     * @memberof EVENT
+     * @property ADD_AIRCRAFT
+     * @type {string}
+     */
+    ADD_AIRCRAFT: 'add-aircraft',
+
+    /**
      * @memberof EVENT
      * @property AIRPORT_CHANGE
      * @type {string}
@@ -27,6 +36,79 @@ export const EVENT = {
      * @type {string}
      */
     DESELECT_ACTIVE_STRIP_VIEW: 'deselect-active-strip-view',
+
+    /**
+     * Event used to notify the `CanvasController` when a re-draw
+     * should happen outside of the usual game loop.
+     *
+     * This should only occur as a result of a user action
+     *
+     * @memberof EVENT
+     * @property MARK_CANVAS_DIRTY
+     * @type {string}
+     */
+    MARK_CANVAS_DIRTY: 'mark-dirty-canvas',
+
+    /**
+     * A pan event has been detected necessitating an entire redraw of each canvas
+     *
+     * This may constitute a pan-in-progress and not the completion of a panning action
+     *
+     * @memberof EVENT
+     * @property PAN_VIEWPORT
+     * @type {string}
+     */
+    PAN_VIEWPORT: 'pan-viewport',
+
+    /**
+     * Pause/unpause the game loop
+     *
+     * @memberof EVENT
+     * @property PAUSE_TOGGLE
+     * @type {string}
+     */
+    PAUSE_TOGGLE: 'pause-toggle',
+
+     /**
+     * Fired when the update loop should be either paused or resumed.
+     *
+     * Usually called when airport data is changing (ie, when a new airport
+     * is being loaded).
+     *
+     * @memberof EVENT
+     * @property PAUSE_UPDATE_LOOP
+     * @type {string}
+     */
+    PAUSE_UPDATE_LOOP: 'pause-update-loop',
+
+    /**
+     * Remove an aircraft from the sim
+     *
+     * Usually as a result of the `del` user command
+     *
+     * @memberof EVENT
+     * @property REMOVE_AIRCRAFT
+     * @type {string}
+     */
+    REMOVE_AIRCRAFT: 'remove-aircraft',
+
+    /**
+     * Remove an `AircraftConflict` for an aircraft
+     *
+     * @memberof EVENT
+     * @property REMOVE_AIRCRAFT_CONFLICT
+     * @type {string}
+     */
+    REMOVE_AIRCRAFT_CONFLICT: 'remove-aircraft-conflict',
+
+    /**
+     * An aircraft has been located and needs to be centered in the view
+     *
+     * @memberof EVENT
+     * @property REQUEST_TO_CENTER_POINT_IN_VIEW
+     * @type {string}
+     */
+    REQUEST_TO_CENTER_POINT_IN_VIEW: 'request-to-center-point-in-view',
 
     /**
      * An aircraft data block was clicked and the corresponding
@@ -57,23 +139,76 @@ export const EVENT = {
     STRIP_DOUBLE_CLICK: 'strip-double-click',
 
     /**
-     * An aircraft has been located and needs to be centered in the view
+     * Change the active theme to the specified theme name
      *
      * @memberof EVENT
-     * @property REQUEST_TO_CENTER_POINT_IN_VIEW
+     * @property SET_THEME
      * @type {string}
      */
-    REQUEST_TO_CENTER_POINT_IN_VIEW: 'request-to-center-point-in-view',
+    SET_THEME: 'set-theme',
 
     /**
-     * Fired when the update loop should be either paused or resumed.
-     *
-     * Usually called when airport data is changing (ie, when a new airport
-     * is being loaded).
+     * Step through pre-defined timewarp speeds
      *
      * @memberof EVENT
-     * @property SHOULD_PAUSE_UPDATE_LOOP
+     * @property TIMEWARP_TOGGLE
      * @type {string}
      */
-    SHOULD_PAUSE_UPDATE_LOOP: 'should-pause-update-loop'
+    TIMEWARP_TOGGLE: 'timewarp-toggle',
+
+    /**
+     * @memberof EVENT
+     * @property TOGGLE_LABELS
+     * @type {string}
+     */
+    TOGGLE_LABELS: 'toggle-labels',
+
+    /**
+     * @memberof EVENT
+     * @property TOGGLE_RESTRICTED_AREAS
+     * @type {string}
+     */
+    TOGGLE_RESTRICTED_AREAS: 'toggle-restricted-areas',
+
+    /**
+     * @memberof EVENT
+     * @property TOGGLE_SID_MAP
+     * @type {string}
+     */
+    TOGGLE_SID_MAP: 'should-toggle-sid-map',
+
+    /**
+     * @memberof EVENT
+     * @property TOGGLE_TERRAIN
+     * @type {string}
+     */
+    TOGGLE_TERRAIN: 'should-toggle-terrain',
+
+    /**
+     * Open/close the tutorial modal
+     *
+     * @memberof EVENT
+     * @property TOGGLE_TUTORIAL
+     * @type {string}
+     */
+    TOGGLE_TUTORIAL: 'toggle-tutorial',
+
+    /**
+     * A click has been registered in the unpause button shown within the
+     * screen overlay whil the app is paused
+     *
+     * @memberof EVENT
+     * @property UNPAUSE
+     * @type {string}
+     */
+    UNPAUSE: 'unpause',
+
+    /**
+     * The zoom level has changed necessitating an entire redraw of each canvas
+     *
+     * @memberof EVENT
+     * @property ZOOM_VIEWPORT
+     * @type {string}
+     */
+    ZOOM_VIEWPORT: 'zoom-viewport'
 };

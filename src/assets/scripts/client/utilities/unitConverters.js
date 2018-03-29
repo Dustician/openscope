@@ -59,13 +59,21 @@ export const UNIT_CONVERSION_CONSTANTS = {
      */
     KN_MS: 0.51444444,
     /**
-     * Number used to obtain feet from a flight level number
+     * Number used to obtain altitude in feet from flight level
      *
-     * @property FL_TO_FT_MULTIPLIER
+     * @property FL_FT
      * @type {number}
      * @final
      */
-    FL_TO_FT_MULTIPLIER: 100
+    FL_FT: 100,
+    /**
+     * Number used to obtain flight level from altitude in feet
+     *
+     * @property FT_FL
+     * @type {number}
+     * @final
+     */
+    FT_FL: 0.01
 };
 
 // TODO: This should be moved to its own file once it has been filled in a little more
@@ -174,31 +182,6 @@ export const degreesToRadians = (degrees) => {
 };
 
 /**
- * NOT IN USE
- * convert pixels to kilometers at the current scale
- *
- * @function px_to_km
- * @param  {number} pixels
- * @param  {number} scale
- * @return {number}
- */
-export const px_to_km = (pixels, scale) => {
-    return pixels / scale;
-};
-
-/**
- * NOT IN USE
- * convert kilometers to pixels at the current scale
- *
- * @function km_to_px
- * @param  {number} kilometers
- * @return {number}
- */
-export const km_to_px = (kilometers, scale) => {
-    return kilometers * scale;
-};
-
-/**
  * @function convertMinutesToSeconds
  * @param minutes {number}
  * @return {number}
@@ -214,7 +197,7 @@ export const convertMinutesToSeconds = (minutes) => minutes * 60;
  * @param  {number} value
  * @return {number}
  */
-export const convertToThousands = (value) => parseInt(value, DECIMAL_RADIX) * UNIT_CONVERSION_CONSTANTS.FL_TO_FT_MULTIPLIER;
+export const convertToThousands = (value) => parseInt(value, DECIMAL_RADIX) * UNIT_CONVERSION_CONSTANTS.FL_FT;
 
 /**
  * Attempt to convert a string to a number

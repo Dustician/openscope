@@ -28,11 +28,13 @@ export const TIME = {
  * @final
  */
 export const REGEX = {
-    ALT_SPEED_RESTRICTION: /[a,s,\-,+]/gi,
     COMPASS_DIRECTION: /^[NESW]/,
+    DOUBLE_DOT: /\.\./g,
+    FOUR_DIGIT_OCTAL: /[0-7]{4}/g,
     LAT_LONG: /^([NESW])(\d+(\.\d+)?)([d °](\d+(\.\d+)?))?([m '](\d+(\.\d+)?))?$/,
-    TRANSPONDER_CODE: /^[0-7][0-7][0-7][0-7]$/,
     SW: /[SW]/,
+    SINGLE_DOT: /\./g,
+    TRANSPONDER_CODE: /^[0-7][0-7][0-7][0-7]$/,
     UNICODE: /[^\u0000-\u00ff]/,
     WHITESPACE: /\s/g
 };
@@ -73,3 +75,23 @@ export const PHYSICS_CONSTANTS = {
      */
     GRAVITATIONAL_MAGNITUDE: 9.81
 };
+
+/**
+ * Value used to indicate an invalid or otherwise unset Value
+ * Examples include invalid array index, and numeric properties that have
+ * no real value set other than the value (this value) set at initilization.
+ *
+ * @enum INVALID_NUMBER
+ * @type {number}
+ * @final
+ */
+export const INVALID_NUMBER = -1;
+
+/**
+ * Enumeration for an invalid index number.
+ *
+ * @enum INVALID_INDEX
+ * @type {number}
+ * @final
+ */
+export const INVALID_INDEX = -1;

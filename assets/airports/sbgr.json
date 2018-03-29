@@ -212,7 +212,7 @@
             "origin": "sbgr",
             "destination": "",
             "category": "departure",
-            "route": "SBGR.ROMIB.DORLU",
+            "route": "SBGR.CGO.RCL",
             "altitude": "",
             "speed": "",
             "method": "random",
@@ -347,5 +347,8 @@
                 ["FAB", 1]
             ]
         }
-    ]
+    ],
+    "maps": {
+        "base": []
+    }
 }

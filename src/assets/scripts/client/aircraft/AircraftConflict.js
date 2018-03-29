@@ -1,12 +1,16 @@
-/* eslint-disable camelcase, no-mixed-operators, func-names, object-shorthand, no-param-reassign */
 import _includes from 'lodash/includes';
 import _filter from 'lodash/filter';
+import AirportController from '../airport/AirportController';
+import EventBus from '../lib/EventBus';
+import GameController, { GAME_EVENTS } from '../game/GameController';
+import TimeKeeper from '../engine/TimeKeeper';
+import UiController from '../UiController';
 import { abs } from '../math/core';
 import { angle_offset } from '../math/circle';
 import { vlen, vsub, vturn } from '../math/vector';
-import { km_ft, degreesToRadians } from '../utilities/unitConverters';
+import { degreesToRadians } from '../utilities/unitConverters';
 import { SEPARATION } from '../constants/aircraftConstants';
-import { GAME_EVENTS } from '../game/GameController';
+import { EVENT } from '../constants/eventNames';
 
 /**
  * Details about aircraft in close proximity in relation to 'the rules'
@@ -15,6 +19,8 @@ import { GAME_EVENTS } from '../game/GameController';
  */
 export default class AircraftConflict {
     constructor(first, second) {
+        this._eventBus = EventBus;
+
         this.aircraft = [first, second];
         this.distance = vlen(vsub(first.relativePosition, second.relativePosition));
         this.distance_delta = 0;
@@ -39,8 +45,7 @@ export default class AircraftConflict {
      * @method destroy
      */
     destroy() {
-        // TODO: this should be moved to an EventBus trigger
-        window.aircraftController.removeConflict(this);
+        this._eventBus.trigger(EVENT.REMOVE_AIRCRAFT_CONFLICT, this);
     }
 
     /**
@@ -98,6 +103,7 @@ export default class AircraftConflict {
     update() {
         if (this.shouldBeRemoved()) {
             this.destroy();
+
             return;
         }
 
@@ -108,10 +114,10 @@ export default class AircraftConflict {
 
         this._recalculateLateralAndVerticalDistances();
         this.checkCollision();
-        this.checkRunwayCollision();
 
         // Ignore aircraft below about 1000 feet
-        const airportElevation = window.airportController.airport_get().elevation;
+        const airportElevation = AirportController.airport_get().elevation;
+        const gameTime = TimeKeeper.accumulatedDeltaTime;
         if (((this.aircraft[0].altitude - airportElevation) < 990) ||
             ((this.aircraft[1].altitude - airportElevation) < 990)) {
             return;
@@ -119,8 +125,8 @@ export default class AircraftConflict {
 
         // TODO: replace magic numbers with enum
         // Ignore aircraft in the first minute of their flight
-        if ((window.gameController.game_time() - this.aircraft[0].takeoffTime < 60) ||
-            (window.gameController.game_time() - this.aircraft[0].takeoffTime < 60)) {
+        if (gameTime - this.aircraft[0].takeoffTime < 60 ||
+            gameTime - this.aircraft[1].takeoffTime < 60) {
             return;
         }
 
@@ -137,7 +143,7 @@ export default class AircraftConflict {
 
         // TODO: enumerate the magic numbers.
         // Collide within 160 feet
-        const airport = window.airportController.airport_get();
+        const airport = AirportController.airport_get();
 
         if (
             ((this.distance < 0.05) && (this.altitude < 160)) &&
@@ -146,48 +152,18 @@ export default class AircraftConflict {
             this.collided = true;
             const isWarning = true;
 
-            window.uiController.ui_log(
+            UiController.ui_log(
                 `${this.aircraft[0].callsign} collided with ${this.aircraft[1].callsign}`,
                 isWarning
             );
 
-            window.gameController.events_recordNew(GAME_EVENTS.COLLISION);
+            GameController.events_recordNew(GAME_EVENTS.COLLISION);
             this.aircraft[0].hit = true;
             this.aircraft[1].hit = true;
 
             // If either are in a runway queue, remove them from it
-            window.airportController.removeAircraftFromAllRunwayQueues(this.aircraft[0]);
-            window.airportController.removeAircraftFromAllRunwayQueues(this.aircraft[1]);
-        }
-    }
-
-    /**
-     * Check for a potential head-on collision on a runway
-     */
-    checkRunwayCollision() {
-        // Check if the aircraft are on a potential collision course on the runway
-
-        // TODO: this logic block needs its own method.
-        // Check for the same runway, different ends and under about 6 miles
-        if (
-            (!this.aircraft[0].isTaxiing() && !this.aircraft[1].isTaxiing()) &&
-            (this.aircraft[0].fms.currentRunway !== null) &&
-            (this.aircraft[0].fms.currentRunway !== this.aircraft[1].fms.currentRunway) &&
-            (this.aircraft[1].fms.currentRunway.name === this.aircraft[0].fms.currentRunway.name) &&
-            (this.distance < 10)
-        ) {
-            if (!this.conflicts.runwayCollision) {
-                const isWarning = true;
-                this.conflicts.runwayCollision = true;
-
-                window.uiController.ui_log(
-                    `${this.aircraft[0].callsign} appears on a collision course with` +
-                    ` ${this.aircraft[1].callsign} on the same runway"`,
-                    isWarning
-                );
-            }
-        } else {
-            this.conflicts.runwayCollision = false;
+            AirportController.removeAircraftFromAllRunwayQueues(this.aircraft[0]);
+            AirportController.removeAircraftFromAllRunwayQueues(this.aircraft[1]);
         }
     }
 
@@ -216,7 +192,7 @@ export default class AircraftConflict {
         // Established on precision guided approaches && both are following different instrument approaches
         if ((a1.isEstablishedOnCourse() && a2.isEstablishedOnCourse()) &&
             (a1.fms.arrivalRunwayModel.name !== a2.fms.arrivalRunwayModel.name)) {
-            const runwayRelationship = window.airportController.airport_get().getRunwayRelationshipForRunwayNames(
+            const runwayRelationship = AirportController.airport_get().getRunwayRelationshipForRunwayNames(
                 a1.fms.arrivalRunwayModel.name,
                 a2.fms.arrivalRunwayModel.name
             );

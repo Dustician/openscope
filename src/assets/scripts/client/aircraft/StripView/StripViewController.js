@@ -1,10 +1,22 @@
 import $ from 'jquery';
+import _random from 'lodash/random';
+import _without from 'lodash/without';
 import StripViewCollection from './StripViewCollection';
 import StripViewModel from './StripViewModel';
+import { INVALID_INDEX } from '../../constants/globalConstants';
 import { SELECTORS } from '../../constants/selectors';
 
 /**
- * Controll modifications of the `$stripViewList` and coordinate
+ * The highest number allowed for a cid value
+ *
+ * @property CID_UPPER_BOUND
+ * @type {number}
+ * @final
+ */
+const CID_UPPER_BOUND = 999;
+
+/**
+ * Control modifications of the `$stripViewList` and coordinate
  * management of the `StripViewCollection`. Also responsible for
  * creating new `StripViewModel` instances.
  *
@@ -16,6 +28,8 @@ export default class StripViewController {
      */
     constructor() {
         /**
+         * Collection class used to manage instances of `StripViewModel`s
+         *
          * @property _collection
          * @type {StripViewCollection}
          * @default null
@@ -46,6 +60,13 @@ export default class StripViewController {
          * @type {JQuery|HTMLElement}
          */
         this.$stripListTrigger = $(SELECTORS.DOM_SELECTORS.STRIP_VIEW_TRIGGER);
+
+        /**
+         * @property _cidNumbersInUse
+         * @type {array<number>}
+         * @private
+         */
+        this._cidNumbersInUse = [];
 
         return this._init()
             .enable();
@@ -103,24 +124,17 @@ export default class StripViewController {
      */
     update(aircraftList) {
         // TODO: this should probably work the other way; loop through list items and find an aircraft.
-        // We need a proper `AircraftCollection` for that to be feasable
+        // We need a proper `AircraftCollection` for that to work
         for (let i = 0; i < aircraftList.length; i++) {
             const aircraftModel = aircraftList[i];
             const stripViewModel = this._collection.findStripByAircraftId(aircraftModel.id);
 
-            // TODO: this should be looked at again
-            // an aircraft strip is created on instantiation, which works for departures where a strip
-            // is shown immediately. For arrivals, this does not work so well. We need to `$.detach() the
-            // strip and re-add it to the list so it is at the end of the list.
             if (aircraftModel.inside_ctr && !stripViewModel.insideCenter) {
-                stripViewModel.$element.detach();
                 this._addViewToStripList(stripViewModel);
             }
 
             if (aircraftModel.inside_ctr) {
                 stripViewModel.update(aircraftModel);
-            } else {
-                stripViewModel.hide();
             }
         }
     }
@@ -133,10 +147,14 @@ export default class StripViewController {
      * @param aircraftModel {AircraftModel}
      */
     createStripView(aircraftModel) {
-        const stripViewModel = new StripViewModel(aircraftModel);
+        const stripViewCid = this._generateCidNumber();
+        const stripViewModel = new StripViewModel(aircraftModel, stripViewCid);
 
         this._collection.addItem(stripViewModel);
-        this._addViewToStripList(stripViewModel);
+
+        if (aircraftModel.isDeparture() || aircraftModel.inside_ctr) {
+            this._addViewToStripList(stripViewModel);
+        }
     }
 
     /**
@@ -209,12 +227,16 @@ export default class StripViewController {
             throw new TypeError(`Attempted to remove a StripViewModel for ${aircraftModel.callsign} that does not exist`);
         }
 
-        stripViewModel.destroy();
+        this._removeCidFromUse(stripViewModel.cid);
         this._collection.removeItem(stripViewModel);
+        stripViewModel.destroy();
     }
 
     /**
      * Add `StripViewModel` to the `$stripViewList`
+     *
+     * This adds a given `stripViewModel` into the DOM as a
+     * child of `$stripViewList`
      *
      * @for StripViewController
      * @method _addViewToStripList
@@ -223,7 +245,7 @@ export default class StripViewController {
      */
     _addViewToStripList(stripViewModel) {
         if (!(stripViewModel instanceof StripViewModel)) {
-            throw new TypeError(`Expected an instance of StripViewModel but reveiced ${typeof stripViewModel}`);
+            throw new TypeError(`Expected an instance of StripViewModel but received ${typeof stripViewModel}`);
         }
 
         const scrollPosition = this.$stripViewList.scrollTop();
@@ -232,7 +254,6 @@ export default class StripViewController {
         // shift scroll down one strip's height
         this.$stripViewList.scrollTop(scrollPosition + StripViewModel.HEIGHT);
     }
-
 
     /**
      * Event handler for when a `StripViewModel` instance is clicked
@@ -257,7 +278,47 @@ export default class StripViewController {
      * @private
      */
     // eslint-disable-next-line no-unused-vars
-    _onStripListClickOutsideStripViewModel = (event) => {
-        this.findAndDeselectActiveStripView();
-    };
+    _onStripListClickOutsideStripViewModel = (event) => this.findAndDeselectActiveStripView();
+
+    /**
+     * Generate a unique number to represent a `CID`
+     *
+     * Should be displayed with leading zeros, so a `CID` value of `1` should be displayed as `001`
+     *
+     * @for StripViewController
+     * @method _generateCidNumber
+     * @return nextCid {number}
+     * @private
+     */
+    _generateCidNumber() {
+        const nextCid = _random(1, CID_UPPER_BOUND);
+
+        if (this._cidNumbersInUse.indexOf(nextCid) !== INVALID_INDEX) {
+            this._generateCidNumber();
+        }
+
+        this._cidNumbersInUse.push(nextCid);
+
+        return nextCid;
+    }
+
+     /**
+      * Remove a given `#cid` from use
+      *
+      * Used when an aircraft has landed or departed controlled airspace
+      *
+      * @for StripViewController
+      * @method _removeCidFromUse
+      * @param cid {number}
+      * @private
+      */
+    _removeCidFromUse(cid) {
+        const cidIndex = this._cidNumbersInUse.indexOf(cid);
+
+        if (cidIndex === INVALID_INDEX) {
+            return;
+        }
+
+        this._cidNumbersInUse = _without(this._cidNumbersInUse, cid);
+    }
 }

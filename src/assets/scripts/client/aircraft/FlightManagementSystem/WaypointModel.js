@@ -1,149 +1,129 @@
-import _get from 'lodash/get';
+import _isArray from 'lodash/isArray';
+import _isEmpty from 'lodash/isEmpty';
+import FixCollection from '../../navigationLibrary/FixCollection';
 import {
+    INVALID_INDEX,
+    INVALID_NUMBER
+} from '../../constants/globalConstants';
+import {
+    DEFAULT_HOLD_PARAMETERS,
     RNAV_WAYPOINT_DISPLAY_NAME,
-    RNAV_WAYPOINT_PREFIX,
-    VECTOR_WAYPOINT_PREFIX
-} from '../../constants/navigation/routeConstants';
-import { extractHeadingFromVectorSegment } from '../../navigationLibrary/Route/routeStringFormatHelper';
-import { degreesToRadians } from '../../utilities/unitConverters';
+    RNAV_WAYPOINT_PREFIX
+} from '../../constants/waypointConstants';
+// import { extractHeadingFromVectorSegment } from '../../navigationLibrary/Route/routeStringFormatHelper';
+import {
+    degreesToRadians,
+    DECIMAL_RADIX
+} from '../../utilities/unitConverters';
 
 /**
- * A representation of navigation point within a flight plan.
+ * A navigation point within an aircraft's flight plan
  *
- * // TODO: needs more info here
- * This navigation point can originate from one of several sources:
- * - `FixModel`, when flying to a specific fix or holding at a specific fix
- * - `StandardRouteWaypointModel`, when flying a standardRoute (SID/STAR)
+ * This may include various types of restrictions or holding information, all
+ * of which are used by the aircraft to follow various routes and procedures
+ * utilized by the controller.
  *
  * @class WaypointModel
  */
 export default class WaypointModel {
     /**
-     *
-     * @constructor
      * @for WaypointModel
-     * @param waypointProps {object}
+     * @constructor
      */
-    constructor(waypointProps) {
-        /**
-         * Name of the waypoint
-         *
-         * Should be an ICAO identifier
-         *
-         * @property name
-         * @type {string}
-         * @default ''
-         */
-        this._name = '';
+    constructor(data) {
+        if (typeof data !== 'string' && !_isArray(data)) {
+            throw new TypeError(`Expected valid data to create WaypointModel but received ${data}`);
+        }
 
-        /**
-         * `StaticPositionModel` of the waypoint.
-         *
-         * @property _positionModel
-         * @type {StaticPositionModel}
-         * @default null
-         * @private
-         */
+        this.altitudeMaximum = -1;
+        this.altitudeMinimum = -1;
+        this.speedMaximum = -1;
+        this.speedMinimum = -1;
+        this._holdParameters = Object.assign({}, DEFAULT_HOLD_PARAMETERS);
+        this._isFlyOverWaypoint = false;
+        this._isHoldWaypoint = false;
+        this._isVectorWaypoint = false;
+        this._name = '';
         this._positionModel = null;
 
-        /**
-         * Speed restriction for the waypoint.
-         *
-         * This speed cannot be exceeded.
-         *
-         * @property speedRestriction
-         * @type {number}
-         * @default -1
-         */
-        this.speedRestriction = -1;
+        this.init(data);
+    }
 
-        /**
-         * Altitude restriction for the waypoint.
-         *
-         * This altitude cannot be exceeded.
-         *
-         * @property altitudeRestriction
-         * @type {number}
-         * @default -1
-         */
-        this.altitudeRestriction = -1;
+    /**
+     * @for WaypointModel
+     * @property hasAltitudeRestriction
+     * @type {boolean}
+     */
+    get hasAltitudeRestriction() {
+        return this.altitudeMaximum !== INVALID_NUMBER || this.altitudeMinimum !== INVALID_NUMBER;
+    }
 
-        /**
-         * Heading to fly during the inbound leg of a holding pattern at this fix
-         * @for WaypointModel
-         * @member _holdingPatternInboundHeading
-         * @type number
-         */
-        this._holdingPatternInboundHeading = null;
+    /**
+     * @for WaypointModel
+     * @property hasRestriction
+     * @type {boolean}
+     */
+    get hasRestriction() {
+        return this.hasAltitudeRestriction || this.hasSpeedRestriction;
+    }
 
-        /**
-         * Direction to turn for a holding pattern
-         *
-         * Used only when waypoint is a holding pattern
-         *
-         * @property _turnDirection
-         * @type {string}
-         * @private
-         */
-        this._turnDirection = '';
+    /**
+     * @for WaypointModel
+     * @property hasSpeedRestriction
+     * @type {boolean}
+     */
+    get hasSpeedRestriction() {
+        return this.speedMaximum !== INVALID_NUMBER || this.speedMinimum !== INVALID_NUMBER;
+    }
 
-        /**
-         * Length of each leg in holding pattern.
-         *
-         * Measured in either minutes or nautical miles
-         * Used only when waypoint is a holding pattern
-         *
-         * @property _legLength
-         * @type {string}
-         * @private
-         */
-        this._legLength = '';
+    /**
+     * Provides properties needed for an aircraft to execute a
+     * holding pattern.
+     *
+     * This is used to match an existing API
+     *
+     * @for WaypointModel
+     * @property hold
+     * @return {object}
+     */
+    get holdParameters() {
+        if (!this._isHoldWaypoint) {
+            return;
+        }
 
-        /**
-         * Timer id for holding pattern
-         *
-         * Used only when waypoint is a holding pattern
-         *
-         * @property timer
-         * @type {number}
-         * @default -999
-         * @private
-         */
-        this.timer = -999;
+        return this._holdParameters;
+    }
 
-        /**
-         * Flag used to determine if the waypoint must be flown over before the
-         * aircraft may proceed to the next fix on their route.
-         *
-         * @for WaypointModel
-         * @property _isFlyOverWaypoint
-         * @type {boolean}
-         * @default false
-         */
-        this._isFlyOverWaypoint = false;
+    /**
+     * Returns whether `this` is a fly-over waypoint
+     * @for WaypointModel
+     * @property isFlyOverWaypoint
+     * @return {boolean}
+     */
+    get isFlyOverWaypoint() {
+        return this._isFlyOverWaypoint;
+    }
 
-        /**
-         * Flag used to determine if a waypoint is for a holding pattern
-         *
-         * Typically used from the fms as `fms#currentWaypoint`
-         *
-         * @property
-         * @type {boolean}
-         * @default false
-         */
-        this.isHold = false;
+    /**
+    * Returns whether `this` is a hold waypoint
+    *
+    * @for WaypointModel
+    * @property isHoldWaypoint
+    * @type {boolean}
+    */
+    get isHoldWaypoint() {
+        return this._isHoldWaypoint;
+    }
 
-        /**
-         * Flag used to determine if a waypoint is for a vector
-         *
-         * @for WaypointModel
-         * @property _isVector
-         * @type {boolean}
-         * @default false
-         */
-        this._isVector = false;
-
-        this.init(waypointProps);
+    /**
+    * Returns whether `this` is a vector waypoint
+    *
+    * @for WaypointModel
+    * @property isVector
+    * @return {boolean}
+    */
+    get isVectorWaypoint() {
+        return this._isVectorWaypoint;
     }
 
     /**
@@ -158,40 +138,11 @@ export default class WaypointModel {
      * @return {string}
      */
     get name() {
-        if (this._name.indexOf(RNAV_WAYPOINT_PREFIX) !== -1) {
+        if (this._name.indexOf(RNAV_WAYPOINT_PREFIX) !== INVALID_INDEX) {
             return RNAV_WAYPOINT_DISPLAY_NAME;
         }
 
         return this._name;
-    }
-
-    /**
-     * @property name
-     * @type {string}
-     */
-    set name(nameUpdate) {
-        this._name = name;
-    }
-
-    /**
-     * Provides properties needed for an aircraft to execute a
-     * holding pattern.
-     *
-     * This is used to match an existing API
-     *
-     * @for WaypointModel
-     * @property hold
-     * @return {object}
-     */
-    get hold() {
-        return {
-            dirTurns: this._turnDirection,
-            fixName: this._name,
-            fixPos: this._positionModel.relativePosition,
-            inboundHeading: this._holdingPatternInboundHeading,
-            legLength: parseInt(this._legLength.replace('min', ''), 10),
-            timer: this.timer
-        };
     }
 
     /**
@@ -213,106 +164,398 @@ export default class WaypointModel {
      * @return {array<number>} [kilometersNorth, kilometersEast]
      */
     get relativePosition() {
+        if (this.isVectorWaypoint) {
+            return;
+        }
+
         return this._positionModel.relativePosition;
     }
 
+    // ------------------------------ LIFECYCLE ------------------------------
+
     /**
-     * Returns whether `this` is a fly-over waypoint
+     * Initialize instance properties
+     *
      * @for WaypointModel
-     * @property isFlyOverWaypoint
-     * @return {boolean}
+     * @method init
+     * @param data {object}
+     * @chainable
      */
-    get isFlyOverWaypoint() {
-        return this._isFlyOverWaypoint;
+    init(data) {
+        let fixName = data;
+        let restrictions = '';
+
+        if (_isArray(data)) {
+            if (data.length !== 2) {
+                throw new TypeError(`Expected restricted fix to have restrictions, but received ${data}`);
+            }
+
+            fixName = data[0];
+            restrictions = data[1];
+        }
+
+        this._name = fixName.replace('@', '').replace('^', '');
+
+        this._initSpecialWaypoint(fixName);
+        this._applyRestrictions(restrictions);
+        this._initializePosition();
+
+        return;
     }
 
     /**
-     * Returns whether `this` is a vector waypoint
+     * Reset instance properties
      *
      * @for WaypointModel
-     * @property isVector
-     * @return {boolean}
+     * @method reset
+     * @chainable
      */
-    get isVector() {
-        return this._isVector;
+    reset() {
+        this.altitudeMaximum = -1;
+        this.altitudeMinimum = -1;
+        this.speedMaximum = -1;
+        this.speedMinimum = -1;
+        this._holdParameters = Object.assign({}, DEFAULT_HOLD_PARAMETERS);
+        this._isFlyOverWaypoint = false;
+        this._isHoldWaypoint = false;
+        this._isVectorWaypoint = false;
+        this._name = '';
+        this._positionModel = null;
+
+        return this;
+    }
+
+    /**
+     * Initialize properties to make this waypoint a fly-over waypoint
+     *
+     * @for WaypointModel
+     * @method _initFlyOverWaypoint
+     * @private
+     */
+    _initFlyOverWaypoint() {
+        this._isFlyOverWaypoint = true;
+    }
+
+    /**
+     * Initialize properties to make this waypoint a hold waypoint
+     *
+     * @for WaypointModel
+     * @method _initHoldWaypoint
+     * @private
+     */
+    _initHoldWaypoint() {
+        this._isHoldWaypoint = true;
+    }
+
+    /**
+     * Perform additional initialization tasks as needed if waypoint is a flyover/hold/vector/etc waypoint
+     *
+     * @for WaypointModel
+     * @method _initSpecialWaypoint
+     * @param fixname {string} name of the fix, including any special characters
+     */
+    _initSpecialWaypoint(fixName) {
+        if (fixName.indexOf('^') !== INVALID_INDEX) {
+            this._initFlyOverWaypoint();
+
+            return;
+        }
+
+        if (fixName.indexOf('@') !== INVALID_INDEX) {
+            this._initHoldWaypoint();
+
+            return;
+        }
+
+        if (fixName.indexOf('#') !== INVALID_INDEX) {
+            this._initVectorWaypoint();
+
+            return;
+        }
+    }
+
+    /**
+     * Initialize properties to make this waypoint a vector waypoint
+     *
+     * @for WaypointModel
+     * @method _initVectorWaypoint
+     * @private
+     */
+    _initVectorWaypoint() {
+        this._isVectorWaypoint = true;
+    }
+
+    // ------------------------------ PUBLIC ------------------------------
+
+    /**
+     * Mark this waypoint as a hold waypoint
+     *
+     * @for WaypointModel
+     * @method activateHold
+     */
+    activateHold() {
+        this._isHoldWaypoint = true;
+    }
+
+    /**
+     * Calculate the distance between two waypoint models
+     *
+     * @for WaypointModel
+     * @method calculateBearingToWaypoint
+     * @param waypointModel {WaypointModel}
+     * @return {number} bearing, in radians
+     */
+    calculateBearingToWaypoint(waypointModel) {
+        this._ensureNonVectorWaypointsForThisAndWaypoint(waypointModel);
+
+        return this._positionModel.bearingToPosition(waypointModel.positionModel);
+    }
+
+    /**
+     * Calculate the distance between two waypoint models
+     *
+     * @for WaypointModel
+     * @method calculateDistanceToWaypoint
+     * @param waypointModel {WaypointModel}
+     * @return {number} distance, in nautical miles
+     */
+    calculateDistanceToWaypoint(waypointModel) {
+        this._ensureNonVectorWaypointsForThisAndWaypoint(waypointModel);
+
+        return this._positionModel.distanceToPosition(waypointModel.positionModel);
+    }
+
+    /**
+     * Cancel any hold at this waypoint
+     *
+     * @for WaypointModel
+     * @method deactivateHold
+     */
+    deactivateHold() {
+        this._isHoldWaypoint = false;
     }
 
     /**
      * When `#_isVector` is true, this gets the heading that should be flown
      *
      * @for WaypointModel
-     * @property vector
+     * @method _getVector
      * @type {number}
      */
-    get vector() {
-        if (!this.isVector) {
+    getVector() {
+        if (!this._isVectorWaypoint) {
             return;
         }
 
-        const headingInDegrees = parseInt(extractHeadingFromVectorSegment(this._name), 10);
+        const fixNameWithOutPoundSign = this._name.replace('#', '');
+        const headingInDegrees = parseInt(fixNameWithOutPoundSign, DECIMAL_RADIX);
         const headingInRadians = degreesToRadians(headingInDegrees);
 
         return headingInRadians;
     }
 
     /**
-     * Initialize the class properties
+     * Check for a maximum altitude restriction below the given altitude
      *
-     * Should be run only on instantiation
-     *
-     * @For WaypointModel
-     * @method init
-     * @param waypointProps {object}
+     * @for WaypointModel
+     * @method hasMaximumAltitudeBelow
+     * @param altitude {number} in feet
+     * @return {boolean}
      */
-    init(waypointProps) {
-        this._name = waypointProps.name.toLowerCase();
-        this._positionModel = waypointProps.positionModel;
-        this.speedRestriction = parseInt(waypointProps.speedRestriction, 10);
-        this.altitudeRestriction = parseInt(waypointProps.altitudeRestriction, 10);
-        this._isFlyOverWaypoint = waypointProps.isFlyOverWaypoint;
-        this._isVector = waypointProps.isVector;
-
-        // these properties will only be available for holding pattern waypoints
-        this.isHold = _get(waypointProps, 'isHold', this.isHold);
-        this.timer = _get(waypointProps, 'timer', this.timer);
-        this._holdingPatternInboundHeading = _get(waypointProps, '_holdingPatternInboundHeading',
-            this._holdingPatternInboundHeading
-        );
-        this._legLength = _get(waypointProps, 'legLength', this._legLength);
-        this._turnDirection = _get(waypointProps, 'turnDirection', this._turnDirection);
+    hasMaximumAltitudeBelow(altitude) {
+        return this.altitudeMaximum !== INVALID_NUMBER
+            && this.altitudeMaximum < altitude;
     }
 
     /**
-     * Tear down the instance and reset class properties
+     * Check for a minimum altitude restriction above the given altitude
      *
      * @for WaypointModel
-     * @method destroy
+     * @method hasMinimumAltitudeAbove
+     * @param altitude {number} in feet
+     * @return {boolean}
      */
-    destroy() {
-        this._name = '';
-        this._turnDirection = '';
-        this._legLength = '';
-        this._positionModel = null;
-
-        this.isHold = false;
-        this.speedRestriction = -1;
-        this.altitudeRestriction = -1;
-        this.timer = -999;
+    hasMinimumAltitudeAbove(altitude) {
+        return this.altitudeMinimum !== INVALID_NUMBER
+            && this.altitudeMinimum > altitude;
     }
 
     /**
-     * Add hold-specific properties to an existing `WaypointModel` instance
+     * Reset the value of #_holdParameters.timer to the default
      *
      * @for WaypointModel
-     * @method updateWaypointWithHoldProps
-     * @param inboundHeading {number}  in radians
-     * @param turnDirection {string}   either left or right
-     * @param legLength {string}       length of the hold leg in minutes or nm
+     * @method resetHoldTimer
      */
-    updateWaypointWithHoldProps(inboundHeading, turnDirection, legLength) {
-        this.isHold = true;
-        this._holdingPatternInboundHeading = inboundHeading;
-        this._turnDirection = turnDirection;
-        this._legLength = legLength;
+    resetHoldTimer() {
+        this._holdParameters.timer = DEFAULT_HOLD_PARAMETERS.timer;
+    }
+
+    /**
+     * Set parameters for the planned holding pattern at this waypoint. This does NOT
+     * inherently make this a hold waypoint, but simply describes the holding pattern
+     * aircraft should follow IF they are told to hold at this waypoint
+     *
+     * @for WaypointModel
+     * @method setHoldParameters
+     * @param holdParameters {object}
+     */
+    setHoldParameters(holdParameters) {
+        this._holdParameters = Object.assign({}, this._holdParameters, holdParameters);
+    }
+
+    /**
+     * Stores provided parameters for holding pattern, and marks this as a hold waypoint
+     *
+     * @for WaypointModel
+     * @method setHoldParametersAndActivateHold
+     * @param inboundHeading {number} in radians
+     * @param turnDirection {string} either left or right
+     * @param legLength {string} length of the hold leg in minutes or nm
+     */
+    setHoldParametersAndActivateHold(holdParameters) {
+        this.setHoldParameters(holdParameters);
+        this.activateHold();
+    }
+
+    /**
+     * Set the value of #_holdParameters.timer
+     *
+     * @for WaypointModel
+     * @method setHoldTimer
+     * @param expirationTime {number} game time (seconds) when the timer should "expire"
+     */
+    setHoldTimer(expirationTime) {
+        if (typeof expirationTime !== 'number') {
+            throw new TypeError('Expected hold timer expiration time to be a ' +
+                `number, but received type ${typeof expirationTime}`
+            );
+        }
+
+        this._holdParameters.timer = expirationTime;
+    }
+
+    // ------------------------------ PRIVATE ------------------------------
+
+    /**
+     * Apply an altitude restriction in the appropriate properties
+     *
+     * @for WaypointModel
+     * @method _applyAltitudeRestriction
+     * @param restriction {string}
+     */
+    _applyAltitudeRestriction(restriction) {
+        const altitude = parseInt(restriction, 10) * 100;
+
+        if (restriction.indexOf('+') !== -1) {
+            this.altitudeMinimum = altitude;
+
+            return;
+        } else if (restriction.indexOf('-') !== -1) {
+            this.altitudeMaximum = altitude;
+
+            return;
+        }
+
+        this.altitudeMaximum = altitude;
+        this.altitudeMinimum = altitude;
+    }
+
+    /**
+     * Parse the restrictions, and store the inferred meaning in the appropriate properties
+     *
+     * @for WaypointModel
+     * @method _applyRestrictions
+     * @param restrictions {string} restrictions, separated by pipe symbol: '|'
+     */
+    _applyRestrictions(restrictions) {
+        if (_isEmpty(restrictions)) {
+            return;
+        }
+
+        const restrictionCollection = restrictions.split('|');
+
+        for (let i = 0; i < restrictionCollection.length; i++) {
+            const restriction = restrictionCollection[i];
+
+            // looking at the first letter of a restriction
+            if (restriction[0] === 'A') {
+                this._applyAltitudeRestriction(restriction.substr(1));
+            } else if (restriction[0] === 'S') {
+                this._applySpeedRestriction(restriction.substr(1));
+            } else {
+                throw new TypeError('Expected "A" or "S" prefix on restriction, ' +
+                    `but received prefix '${restriction[0]}'`);
+            }
+        }
+    }
+
+    /**
+     * Apply a speed restriction in the appropriate properties
+     *
+     * @for WaypointModel
+     * @method _applySpeedRestriction
+     * @param restriction {string}
+     */
+    _applySpeedRestriction(restriction) {
+        const speed = parseInt(restriction, 10);
+
+        if (restriction.indexOf('+') !== -1) {
+            this.speedMinimum = speed;
+
+            return;
+        } else if (restriction.indexOf('-') !== -1) {
+            this.speedMaximum = speed;
+
+            return;
+        }
+
+        this.speedMaximum = speed;
+        this.speedMinimum = speed;
+    }
+
+    /**
+     * Verify that this waypoint and the specified waypoint are both valid, non-vector waypoints
+     *
+     * If either are not, then throw some errors about it.
+     *
+     * This method is used to protect certain methods that would have undesirable
+     * behaviors with vector waypoints (such as those measuring angles or distances
+     * between waypoint models, etc). In those cases, we should be cognizant to
+     * exclude vector (or other undesirable) waypoints from those operations, rather
+     * than attempting to execute a calculation that cannot yield a logical result.
+     *
+     * @for WaypointModel
+     * @method _ensureNonVectorWaypointsForThisAndWaypoint
+     * @param waypointModel {WaypointModel}
+     * @private
+     */
+    _ensureNonVectorWaypointsForThisAndWaypoint(waypointModel) {
+        if (!(waypointModel instanceof WaypointModel)) {
+            throw new TypeError(`Expected a WaypointModel instance, but received type '${waypointModel}'`);
+        }
+
+        if (this._isVectorWaypoint || waypointModel.isVectorWaypoint) {
+            throw new TypeError('Expected .calculateBearingToWaypoint() to never be called with vector waypoints!');
+        }
+    }
+
+    /**
+     * Initialize the waypoint's position model based on #_name
+     *
+     * @for WaypointModel
+     * @method _initializePosition
+     */
+    _initializePosition() {
+        if (this._isVectorWaypoint) {
+            return;
+        }
+
+        const fixPosition = FixCollection.getPositionModelForFixName(this._name);
+
+        if (!fixPosition) {
+            throw new TypeError(`Expected fix with known position, but cannot find fix '${this._name}'`);
+        }
+
+        this._positionModel = fixPosition;
     }
 }

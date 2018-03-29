@@ -1,31 +1,15 @@
-/* eslint-disable max-len */
 import $ from 'jquery';
-import _isEmpty from 'lodash/isEmpty';
-import _isNil from 'lodash/isNil';
+import AppController from './AppController';
 import EventBus from './lib/EventBus';
-import ContentQueue from './contentQueue/ContentQueue';
-import LoadingView from './LoadingView';
-import AirportController from './airport/AirportController';
-import NavigationLibrary from './navigationLibrary/NavigationLibrary';
-import AircraftController from './aircraft/AircraftController';
-import AirlineController from './airline/AirlineController';
-import SpawnPatternCollection from './trafficGenerator/SpawnPatternCollection';
-import SpawnScheduler from './trafficGenerator/SpawnScheduler';
-import GameController from './game/GameController';
-import TutorialView from './tutorial/TutorialView';
-import AircraftCommander from './aircraft/AircraftCommander';
-import InputController from './InputController';
-import UiController from './UiController';
-import CanvasController from './canvas/CanvasController';
-import GameClockView from './game/GameClockView';
-import { speech_init } from './speech';
-import { time, calculateDeltaTime } from './utilities/timeHelpers';
+import TimeKeeper from './engine/TimeKeeper';
+import { DEFAULT_AIRPORT_ICAO } from './constants/airportConstants';
 import { EVENT } from './constants/eventNames';
-import { SELECTORS } from './constants/selectors';
 import { LOG } from './constants/logLevel';
 
 window.zlsa = {};
 window.zlsa.atc = {};
+
+// TODO: KILL THE PROP!
 const prop = {};
 
 // IIEFs are pulled in here to add functions to the global space.
@@ -34,24 +18,14 @@ const prop = {};
 // imported as needed in each file.
 require('./util');
 
-// Used to display the version number in the console
-const VERSION = '5.2.0-BETA';
-
 // are you using a main loop? (you must call update() afterward disable/re-enable)
 let UPDATE = true;
-
-// the framerate is updated this often (seconds)
-const FRAME_DELAY = 1;
-
-// is this a release build?
-const RELEASE = false;
 
 /**
  * @class App
  */
 export default class App {
     /**
-     * @for App
      * @constructor
      * @param $element {HTML Element|null}
      * @param airportLoadList {array<object>}  List of airports to load
@@ -66,99 +40,118 @@ export default class App {
          * @default body
          */
         this.$element = $(element);
+        this._appController = new AppController(this.$element);
         this.eventBus = EventBus;
-        this.loadingView = null;
-        this.contentQueue = null;
-        this.airlineCollection = null;
-        this.airportController = null;
-        this.tutorialView = null;
-        this.aircraftCommander = null;
-        this.inputController = null;
-        this.uiController = null;
-        this.canvasController = null;
 
         window.prop = prop;
 
         this.prop = prop;
         this.prop.complete = false;
-        this.prop.temp = 'nothing here';
-        this.prop.version = VERSION;
-        this.prop.time = {};
-        this.prop.time.start = time();
-        this.prop.time.frames = 0;
-        this.prop.time.frame = {};
-        this.prop.time.frame.start = time();
-        this.prop.time.frame.delay = FRAME_DELAY;
-        this.prop.time.frame.count = 0;
-        this.prop.time.frame.last = time();
-        this.prop.time.frame.delta = 0;
-        this.prop.time.fps = 0;
         this.prop.log = LOG.DEBUG;
         this.prop.loaded = false;
 
-        if (RELEASE) {
-            this.prop.log = LOG.WARNING;
-        }
-
-        return this.createHandlers()
-            .initiateDataLoad(airportLoadList, initialAirportToLoad);
+        return this.setupHandlers()
+            .loadInitialAirport(airportLoadList, initialAirportToLoad);
     }
 
     /**
      * Create event handlers
      *
      * @for App
-     * @method createHandlers
+     * @method setupHandlers
      * @chainable
      */
-    createHandlers() {
-        this.eventBus.on(EVENT.AIRPORT_CHANGE, this.onAirportChange);
-        this.eventBus.on(EVENT.SHOULD_PAUSE_UPDATE_LOOP, this.updateRun);
+    setupHandlers() {
+        this.loadDefaultAiportAfterStorageIcaoFailureHandler = this.loadDefaultAiportAfterStorageIcaoFailure.bind(this);
+        this.loadAirlinesAndAircraftHandler = this.loadAirlinesAndAircraft.bind(this);
+        this.setupChildrenHandler = this.setupChildren.bind(this);
+        this.onPauseHandler = this._onPause.bind(this);
+        this.onUpdateHandler = this.update.bind(this);
+
+        this.eventBus.on(EVENT.PAUSE_UPDATE_LOOP, this.onPauseHandler);
 
         return this;
     }
 
     /**
-     * Lifecycle method. Should be called only once on initialization.
+     * Used to load data for the initial airport using an icao from
+     * either localStorage or `DEFAULT_AIRPORT_ICAO`
      *
-     * Used to load an initial data set from several sources.
+     * If a localStorage airport cannot be found, we will attempt
+     * to load the `DEFAULT_AIRPORT_ICAO`
+     *
+     * Lifecycle method. Should be called only once on initialization
      *
      * @for App
-     * @method setupChildren
+     * @method loadInitialAirport
      * @param airportLoadList {array<object>}  List of airports to load
      */
-    initiateDataLoad(airportLoadList, initialAirportToLoad) {
+    loadInitialAirport(airportLoadList, initialAirportToLoad) {
+        const initialAirportIcao = initialAirportToLoad.toLowerCase();
+
+        $.getJSON(`assets/airports/${initialAirportIcao}.json`)
+            .then((response) => this.loadAirlinesAndAircraftHandler(airportLoadList, initialAirportIcao, response))
+            .catch((error) => this.loadDefaultAiportAfterStorageIcaoFailureHandler(airportLoadList));
+    }
+
+    /**
+     * Used only when an attempt to load airport data with an icao in localStorage fails.
+     * In this case we attempt to load the default airport with this method
+     *
+     * Lifecycle method. Should be called only once on initialization
+     *
+     * @for App
+     * @method onLoadDefaultAirportAfterStorageIcaoFailure
+     * @param {array<object>} airportLoadList
+     */
+    loadDefaultAiportAfterStorageIcaoFailure(airportLoadList) {
+        $.getJSON(`assets/airports/${DEFAULT_AIRPORT_ICAO}.json`)
+            .then((defaultAirportResponse) => this.loadAirlinesAndAircraftHandler(
+                airportLoadList,
+                DEFAULT_AIRPORT_ICAO,
+                defaultAirportResponse
+            ));
+    }
+
+    /**
+     * Handler method called after data has loaded for the airline and aircraftTypeDefinitions datasets.
+     *
+     * Lifecycle method. Should be called only once on initialization
+     *
+     * @for App
+     * @method loadAirlinesAndAircraft
+     * @param {array>object>} airportLoadList
+     * @param {string} initialAirportIcao
+     * @param {object<string>} initialAirportResponse
+     */
+    loadAirlinesAndAircraft(airportLoadList, initialAirportIcao, initialAirportResponse) {
+        const airlineListPromise = $.getJSON('assets/airlines/airlines.json');
+        const aircraftListPromise = $.getJSON('assets/aircraft/aircraft.json');
+
         // This is provides a way to get async data from several sources in the app before anything else runs
-        // TODO: this is wrong. move this and make it less bad!
-        $.when(
-            $.getJSON(`assets/airports/${initialAirportToLoad.toLowerCase()}.json`),
-            $.getJSON('assets/airlines/airlines.json'),
-            $.getJSON('assets/aircraft/aircraft.json')
-        )
-            .done((airportResponse, airlineResponse, aircraftResponse) => {
-                this.setupChildren(
+        // we need to resolve data from two sources before the app can proceede. This data should always
+        // exist, if it doesn't, something has gone terribly wrong.
+        $.when(airlineListPromise, aircraftListPromise)
+            .done((airlineResponse, aircraftResponse) => {
+                this.setupChildrenHandler(
                     airportLoadList,
-                    airportResponse[0],
+                    initialAirportIcao,
+                    initialAirportResponse,
                     airlineResponse[0].airlines,
                     aircraftResponse[0].aircraft
                 );
-                this.enable();
-            })
-            .fail((jqXHR, textStatus, errorThrown) => {
-                console.error(textStatus);
             });
-
-        return this;
     }
 
     /**
      * Callback for a successful data load
      *
-     * An first load of data occurs on startup where we load the initial airport, airline definitions and
-     * aircraft definitiions. this method is called onComplete of that data load and is used to
+     * A first load of data occurs on startup where we load the initial airport, airline definitions and
+     * aircraft type definitiions. this method is called onComplete of that data load and is used to
      * instantiate various classes with the loaded data.
      *
-     * This method should run only on initial load of the app.
+     * This method will fire `.enable()` that will finish the initialization lifecycle and begine the game loop.
+     * Lifecycle method. Should be called only once on initialization
      *
      * @for App
      * @method setupChildren
@@ -167,43 +160,16 @@ export default class App {
      * @param airlineList {array}             List of all Airline definitions
      * @param aircraftTypeDefinitionList {array}  List of all Aircraft definitions
      */
-    setupChildren(airportLoadList, initialAirportData, airlineList, aircraftTypeDefinitionList) {
-        // TODO: this entire method needs to be re-written. this is a temporary implemenation used to
-        // get things working in a more cohesive manner. soon, all this instantiation should happen
-        // in a different class and the window methods should disappear.
-        zlsa.atc.loadAsset = (options) => this.contentQueue.add(options);
+    setupChildren(airportLoadList, initialAirportIcao, initialAirportData, airlineList, aircraftTypeDefinitionList) {
+        this._appController.setupChildren(
+            airportLoadList,
+            initialAirportIcao,
+            initialAirportData,
+            airlineList,
+            aircraftTypeDefinitionList
+        );
 
-        // IMPORTANT:
-        // The order in which the following classes are instantiated is extremely important. Changing
-        // this order could break a lot of things. This interdependency is something we should
-        // work on reducing in the future.
-
-        this.loadingView = new LoadingView();
-        this.contentQueue = new ContentQueue(this.loadingView);
-        this.gameController = new GameController(this.getDeltaTime);
-        // TODO: Temporary
-        window.gameController = this.gameController;
-
-        this.airportController = new AirportController(initialAirportData, airportLoadList);
-        // TODO: Temporary
-        window.airportController = this.airportController;
-
-        this.navigationLibrary = new NavigationLibrary(initialAirportData);
-        this.airlineController = new AirlineController(airlineList);
-        this.aircraftController = new AircraftController(aircraftTypeDefinitionList, this.airlineController, this.navigationLibrary);
-        // TODO: Temporary
-        window.aircraftController = this.aircraftController;
-
-        this.spawnPatternCollection = new SpawnPatternCollection(initialAirportData, this.navigationLibrary, this.airportController);
-        this.spawnScheduler = new SpawnScheduler(this.spawnPatternCollection, this.aircraftController, this.gameController);
-        this.uiController = new UiController(this.$element, this.gameController, this.airportController);
-        this.canvasController = new CanvasController(this.$element, this.navigationLibrary, this.gameController);
-        this.tutorialView = new TutorialView(this.$element);
-        this.aircraftCommander = new AircraftCommander(this.airportController, this.navigationLibrary, this.gameController, this.uiController);
-        this.inputController = new InputController(this.$element, this.aircraftCommander, this.uiController, this.aircraftController);
-        this.gameClockView = new GameClockView(this.$element);
-
-        this.updateViewControls();
+        this.enable();
     }
 
     /**
@@ -215,19 +181,9 @@ export default class App {
      * @method enable
      */
     enable() {
-        // TEMPORARY!
-        // these instances are attached to the window here as an intermediate step away from global functions.
-        // this allows for any module file to call window.{module}.{method} and will make the transition to
-        // explicit instance parameters easier.
-        window.tutorialView = this.tutorialView;
-        window.inputController = this.inputController;
-        window.uiController = this.uiController;
-
-        console.info(`openScope Air Traffic Control Simulator, Version v${this.prop.version}`);
-
         return this.init_pre()
-                   .init()
-                   .done();
+            .init()
+            .done();
     }
 
     /**
@@ -248,16 +204,6 @@ export default class App {
      */
     destroy() {
         this.$element = null;
-        this.contentQueue = null;
-        this.loadingView = null;
-        this.airlineCollection = null;
-        this.airportController = null;
-        this.gameController = null;
-        this.tutorialView = null;
-        this.aircraftCommander = null;
-        this.inputController = null;
-        this.uiController = null;
-        this.canvasController = null;
 
         return this;
     }
@@ -287,11 +233,7 @@ export default class App {
      * @method init_pre
      */
     init_pre() {
-        this.tutorialView.tutorial_init_pre();
-        this.gameController.init_pre();
-        this.inputController.input_init_pre();
-        this.canvasController.canvas_init_pre();
-        this.uiController.ui_init_pre();
+        this._appController.init_pre();
 
         return this;
     }
@@ -301,10 +243,7 @@ export default class App {
      * @method init
      */
     init() {
-        speech_init();
-
-        this.canvasController.canvas_init();
-        this.uiController.ui_init();
+        this._appController.init();
 
         return this;
     }
@@ -322,45 +261,24 @@ export default class App {
      * @method done
      */
     done() {
-        $(window).resize(this.resize);
-        this.resize();
+        this._appController.done();
+        this._appController.resize();
 
         this.prop.loaded = true;
 
-        this.ready();
-
         if (UPDATE) {
-            requestAnimationFrame(() => this.update());
+            requestAnimationFrame(this.onUpdateHandler);
         }
 
-
         return this;
     }
-
-    /**
-     * @for App
-     * @method ready
-     */
-    ready() {
-        return this;
-    }
-
-    /**
-     * @for App
-     * @method resize
-     */
-    resize = () => {
-        this.canvasController.canvas_resize();
-    };
 
     /**
      * @for App
      * @method complete
      */
     complete() {
-        this.gameController.complete();
-        this.canvasController.canvas_complete();
-        this.uiController.ui_complete();
+        this._appController.complete();
 
         return this;
     }
@@ -370,8 +288,7 @@ export default class App {
      * @method updatePre
      */
     updatePre() {
-        this.gameController.update_pre();
-        this.aircraftController.aircraft_update();
+        this._appController.updatePre();
 
         return this;
     }
@@ -381,8 +298,7 @@ export default class App {
      * @method updatePost
      */
     updatePost() {
-        this.canvasController.canvas_update_post();
-        this.aircraftController.updateAircraftStrips();
+        this._appController.updatePost();
 
         return this;
     }
@@ -394,7 +310,6 @@ export default class App {
     update() {
         if (!this.prop.complete) {
             this.complete();
-            this.loadingView.complete();
 
             this.prop.complete = true;
         }
@@ -403,112 +318,25 @@ export default class App {
             return this;
         }
 
-        requestAnimationFrame(() => this.update());
+        requestAnimationFrame(this.onUpdateHandler);
 
         this.updatePre();
         this.updatePost();
-        this.incrementFrame();
-        this.gameClockView.update();
+        TimeKeeper.update();
 
         return this;
     }
 
     /**
      * @for App
-     * @method incrementFrame
-     */
-    incrementFrame() {
-        const currentTime = time();
-        const elapsed = currentTime - this.prop.time.frame.start;
-
-        this.prop.time.frames += 1;
-        this.prop.time.frame.count += 1;
-
-        if (elapsed > this.prop.time.frame.delay) {
-            this.prop.time.fps = this.prop.time.frame.count / elapsed;
-            this.prop.time.frame.count = 0;
-            this.prop.time.frame.start = currentTime;
-        }
-
-        this.prop.time.frame.delta = calculateDeltaTime(this.prop.time.frame.last);
-        this.prop.time.frame.last = currentTime;
-    }
-
-    /**
-     * @for App
-     * @method getDeltaTime
-     * @return {number}
-     */
-    getDeltaTime = () => {
-        return this.prop.time.frame.delta;
-    };
-
-    /**
-     * @for App
-     * @method updateRun
+     * @method _onPause
      * @param shouldUpdate {boolean}
      */
-    updateRun = (shouldUpdate) => {
+    _onPause(shouldUpdate) {
         if (!UPDATE && shouldUpdate) {
-            requestAnimationFrame(() => this.update());
+            requestAnimationFrame(this.onUpdateHandler);
         }
 
         UPDATE = shouldUpdate;
-    };
-
-    /**
-     * onChange callback fired from within the `AirportModel` when an airport is changed.
-     *
-     * When an airport changes various classes need to clear and reset internal properties for
-     * the new airport. this callback provides a way to orchestrate all that and send the classes
-     * new data.
-     *
-     * This method will not run on initial load.
-     *
-     * @for App
-     * @method onAirportChange
-     * @param nextAirportJson {object}  response or cached object from airport json
-     */
-    onAirportChange = (nextAirportJson) => {
-        if (!this.airportController.airport.current) {
-            // if `current` is null, then this is the initial load and we dont need to reset andything
-            return;
-        }
-
-        this.navigationLibrary.reset();
-        this.airlineController.reset();
-        this.aircraftController.aircraft_remove_all();
-        this.spawnPatternCollection.reset();
-        this.gameController.destroyTimers();
-        this.spawnScheduler = null;
-
-        this.navigationLibrary.init(nextAirportJson);
-        this.spawnPatternCollection.init(nextAirportJson, this.navigationLibrary, this.airportController);
-        this.spawnScheduler = new SpawnScheduler(this.spawnPatternCollection, this.aircraftController, this.gameController);
-
-        this.updateViewControls();
-    };
-
-    // TODO: this should live in a view class somewhere. temporary inclusion here to prevent tests from failing
-    // due to jQuery and because this does not belong in the `AirportModel`
-    /**
-     * Update visibility of icons at the bottom of the view that allow toggling of
-     * certain view elements.
-     *
-     * Abstrcated from `AirportModel`
-     *
-     * @for App
-     * @method updateViewControls
-     */
-    updateViewControls() {
-        const { current: airport } = this.airportController;
-
-        this.canvasController.canvas.draw_labels = true;
-        this.canvasController.canvas.dirty = true;
-
-        $(SELECTORS.DOM_SELECTORS.TOGGLE_LABELS).toggle(!_isEmpty(airport.maps));
-        $(SELECTORS.DOM_SELECTORS.TOGGLE_RESTRICTED_AREAS).toggle((airport.restricted_areas || []).length > 0);
-        $(SELECTORS.DOM_SELECTORS.TOGGLE_SIDS).toggle(!_isNil(this.navigationLibrary.sidCollection));
-        $(SELECTORS.DOM_SELECTORS.TOGGLE_TERRAIN).toggle(airport.data.has_terrain);
     }
 }

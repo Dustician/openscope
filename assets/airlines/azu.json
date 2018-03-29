@@ -3,14 +3,19 @@
     "name": "Azul Linhas Aereas",
     "callsign": {
         "name": "Azul",
-        "length": 3
+        "callsignFormats": [
+            "###"
+        ]
     },
     "fleets": {
+        "long": [
+            ["A332", 5]
+        ],
         "default": [
-            ["A332", 7 ],
-            ["E190", 85],
-            ["AT43", 3 ],
-            ["AT72", 55]
+            ["A320", 8],
+            ["A332", 5],
+            ["AT72", 39],
+            ["E190", 73]
         ]
     }
 }

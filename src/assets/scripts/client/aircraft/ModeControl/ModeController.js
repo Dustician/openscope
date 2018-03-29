@@ -1,9 +1,10 @@
-import { radiansToDegrees } from '../../utilities/unitConverters';
 import {
     MCP_MODE,
     MCP_MODE_NAME,
     MCP_FIELD_NAME
 } from './modeControlConstants';
+import { INVALID_NUMBER } from '../../constants/globalConstants';
+import { radiansToDegrees } from '../../utilities/unitConverters';
 
 /**
  * Part of the autopilot system that determines the source from which to derive the aircraft's targeted telemetry
@@ -79,18 +80,18 @@ export default class ModeController {
          *
          * @property altitude
          * @type {number}
-         * @default -1
+         * @default INVALID_NUMBER
          */
-        this.altitude = -1;
+        this.altitude = INVALID_NUMBER;
 
         /**
          *
          *
          * @property course
          * @type {number}
-         * @default -1
+         * @default INVALID_NUMBER
          */
-        this.course = -1;
+        this.course = INVALID_NUMBER;
 
         /**
          * Heading value in radians
@@ -102,9 +103,9 @@ export default class ModeController {
          *
          * @property heading
          * @type {number}
-         * @default -1
+         * @default INVALID_NUMBER
          */
-        this.heading = -1;
+        this.heading = INVALID_NUMBER;
 
         /**
          * Speed value in knots
@@ -113,9 +114,9 @@ export default class ModeController {
          *
          * @property speed
          * @type {number}
-         * @default -1
+         * @default INVALID_NUMBER
          */
-        this.speed = -1;
+        this.speed = INVALID_NUMBER;
 
         // Other
 
@@ -358,19 +359,31 @@ export default class ModeController {
     }
 
     /**
-     * Set the appropriate values in the MCP when spawning an aircraft that's already in flight
+     * Set the appropriate values in the MCP when spawning an aircraft already in flight
      *
      * @for ModeController
      * @method initializeForAirborneFlight
+     * @param {number} bottomAltitude - the lowest altitude restriction in the FMS
+     * @param {number} airspaceCeiling - maximum altitude belonging to the controller
+     * @param {number} currentAltitude - aircraft's current altitude, in feet ASL
+     * @param {number} currentHeading - aircraft's current heading, in radians
+     * @param {number} currentSpeed - aircraft's current speed, in knots
      */
-    initializeForAirborneFlight(bottomAltitude, currentHeading, currentSpeed) {
-        // TODO: We will need to set the altitude field to the lowest restriction on the STAR,
-        // if applicable, or otherwise to the spawn altitude.
+    initializeForAirborneFlight(bottomAltitude, airspaceCeiling, currentAltitude, currentHeading, currentSpeed) {
         this.setAltitudeFieldValue(bottomAltitude);
-        this.setHeadingFieldValue(currentHeading);
-        this.setSpeedFieldValue(currentSpeed);
         this.setAltitudeVnav();
+
+        // if unable to descend via STAR, force a descent to the top of our airspace
+        if (bottomAltitude === -1) {
+            const descentAltitude = Math.min(currentAltitude, airspaceCeiling);
+
+            this.setAltitudeFieldValue(descentAltitude);
+            this.setAltitudeHold();
+        }
+
+        this.setHeadingFieldValue(currentHeading);
         this.setHeadingLnav();
+        this.setSpeedFieldValue(currentSpeed);
         this.setSpeedVnav();
         this.enable();
     }

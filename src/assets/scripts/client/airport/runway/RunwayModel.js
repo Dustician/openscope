@@ -1,11 +1,16 @@
 import _without from 'lodash/without';
 import BaseModel from '../../base/BaseModel';
 import StaticPositionModel from '../../base/StaticPositionModel';
+import { PERFORMANCE } from '../../constants/aircraftConstants';
+import { INVALID_NUMBER } from '../../constants/globalConstants';
+import {
+    angle_offset,
+    radians_normalize
+} from '../../math/circle';
 import {
     abs,
     tan
 } from '../../math/core';
-import { angle_offset } from '../../math/circle';
 import {
     calculateCrosswindAngle,
     getOffset
@@ -16,7 +21,6 @@ import {
     nm,
     degreesToRadians
 } from '../../utilities/unitConverters';
-import { PERFORMANCE } from '../../constants/aircraftConstants';
 
 /**
  * Describes a single runway at an airport
@@ -88,13 +92,6 @@ export default class RunwayModel extends BaseModel {
         };
 
         /**
-         * @property labelPos
-         * @type {array<number>}
-         * @default []
-         */
-        this.labelPos = [];
-
-        /**
          * @property length
          * @type
          * @default
@@ -149,7 +146,7 @@ export default class RunwayModel extends BaseModel {
      *
      * @for RunwayModel
      * @property gps
-     * @return {array<number>} gps coordinates of the runway
+     * @type {array<number>} gps coordinates of the runway
      */
     get gps() {
         return this._positionModel.gps;
@@ -157,11 +154,22 @@ export default class RunwayModel extends BaseModel {
 
     /**
      * @for RunwayModel
-     * @method elevation
-     * @return {number}
+     * @property elevation
+     * @type {number}
      */
     get elevation() {
         return this._positionModel.elevation || this.airportPositionModel.elevation;
+    }
+
+    /**
+     * Opposite of runway's heading, in radians
+     *
+     * @for RunwayModel
+     * @property oppositeAngle
+     * @type {number}
+     */
+    get oppositeAngle() {
+        return radians_normalize(this.angle + Math.PI);
     }
 
     /**
@@ -214,7 +222,7 @@ export default class RunwayModel extends BaseModel {
             this.ils.glideslopeGradient = degreesToRadians(data.glideslope[end]);
         }
 
-        // FIXME: neither property is defined in any airport json files
+        // TODO: neither property is defined in any airport json files
         // if (data.ils_gs_maxHeight) {
         //     this.ils.gs_maxHeight = data.ils_gs_maxHeight[end];
         // }
@@ -277,7 +285,7 @@ export default class RunwayModel extends BaseModel {
      * @return {boolean}
      */
     isAircraftInQueue(aircraftId) {
-        return this.getAircraftQueuePosition(aircraftId) !== -1;
+        return this.getAircraftQueuePosition(aircraftId) !== INVALID_NUMBER;
     }
 
     /**

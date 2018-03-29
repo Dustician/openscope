@@ -5,11 +5,14 @@ import _forEach from 'lodash/forEach';
 import _get from 'lodash/get';
 import _head from 'lodash/head';
 import _map from 'lodash/map';
-import EventBus from '../lib/EventBus';
+import AirportController from './AirportController';
 import AirspaceModel from './AirspaceModel';
 import DynamicPositionModel from '../base/DynamicPositionModel';
+import EventBus from '../lib/EventBus';
+import GameController from '../game/GameController';
 import RunwayCollection from './runway/RunwayCollection';
 import StaticPositionModel from '../base/StaticPositionModel';
+import TimeKeeper from '../engine/TimeKeeper';
 import { isValidGpsCoordinatePair } from '../base/positionModelHelpers';
 import { degreesToRadians, parseElevation } from '../utilities/unitConverters';
 import { round } from '../math/core';
@@ -21,7 +24,7 @@ import {
 import { EVENT } from '../constants/eventNames';
 import { STORAGE_KEY } from '../constants/storageKeys';
 
-const DEFAULT_CTR_RADIUS_NM = 80;
+const DEFAULT_CTR_RADIUS_KM = 80;
 const DEFAULT_CTR_CEILING_FT = 10000;
 const DEFAULT_INITIAL_ALTITUDE_FT = 5000;
 
@@ -150,14 +153,6 @@ export default class AirportModel {
          */
         this.maps = {};
 
-        // TODO: may need to refactor when implementing Airways
-        /**
-         * @property airways
-         * @type {object}
-         * @default {}
-         */
-        this.airways = {};
-
         /**
          * @property restricted_areas
          * @type {array}
@@ -173,6 +168,16 @@ export default class AirportModel {
          * @default null
          */
         this.airspace = null;
+
+        // TODO: this should really be its own class possibly separate from the `AirportModel`
+        /**
+         * Container for airport terrain definition
+         *
+         * @property terrain
+         * @type {object}
+         * @default {}
+         */
+        this.terrain = {};
 
         /**
          * area outlining the outermost lateral airspace boundary. Comes from this.airspace[0]
@@ -203,13 +208,12 @@ export default class AirportModel {
             angle: 0
         };
 
-
         /**
          * @property ctr_radius
          * @type {nunmber}
-         * @default DEFAULT_CTR_RADIUS_NM
+         * @default DEFAULT_CTR_RADIUS_KM
          */
-        this.ctr_radius = DEFAULT_CTR_RADIUS_NM;
+        this.ctr_radius = DEFAULT_CTR_RADIUS_KM;
 
         /**
          * @property ctr_ceiling
@@ -351,8 +355,7 @@ export default class AirportModel {
 
         this.radio = _get(data, 'radio', this.radio);
         this.has_terrain = _get(data, 'has_terrain', false);
-        this.airways = _get(data, 'airways', {});
-        this.ctr_radius = _get(data, 'ctr_radius', DEFAULT_CTR_RADIUS_NM);
+        this.ctr_radius = _get(data, 'ctr_radius', DEFAULT_CTR_RADIUS_KM);
         this.ctr_ceiling = _get(data, 'ctr_ceiling', DEFAULT_CTR_CEILING_FT);
         this.initial_alt = _get(data, 'initial_alt', DEFAULT_INITIAL_ALTITUDE_FT);
         this.rr_radius_nm = _get(data, 'rr_radius_nm');
@@ -473,11 +476,10 @@ export default class AirportModel {
             }
 
             obj.height = parseElevation(area.height);
-            obj.coordinates = _map(area.coordinates, (v) => {
-                return [
-                    DynamicPositionModel.calculateRelativePosition(v, this._positionModel, this.magneticNorth)
-                ];
-            });
+            obj.coordinates = _map(
+                area.coordinates,
+                (v) => DynamicPositionModel.calculateRelativePosition(v, this._positionModel, this.magneticNorth)
+            );
 
             let coords_max = obj.coordinates[0];
             let coords_min = obj.coordinates[0];
@@ -528,11 +530,11 @@ export default class AirportModel {
         localStorage[STORAGE_KEY.ATC_LAST_AIRPORT] = this.icao;
 
         // TODO: this should live elsewhere and be called by a higher level controller
-        window.gameController.game_reset_score_and_events();
+        GameController.game_reset_score_and_events();
 
-        this.start = window.gameController.game_time();
+        this.start = TimeKeeper.accumulatedDeltaTime;
 
-        this.eventBus.trigger(EVENT.SHOULD_PAUSE_UPDATE_LOOP, true);
+        this.eventBus.trigger(EVENT.PAUSE_UPDATE_LOOP, true);
     }
 
     /**
@@ -547,10 +549,10 @@ export default class AirportModel {
         // TODO: there are a lot of magic numbers here. What are they for and what do they mean? These should be enumerated.
         // const wind = Object.assign({}, this.wind);
         // let s = 1;
-        // const angle_factor = sin((s + window.gameController.game_time()) * 0.5) + sin((s + window.gameController.game_time()) * 2);
+        // const angle_factor = sin((s + TimeKeeper.accumulatedDeltaTime) * 0.5) + sin((s + TimeKeeper.accumulatedDeltaTime) * 2);
         // // TODO: why is this var getting reassigned to a magic number?
         // s = 100;
-        // const speed_factor = sin((s + window.gameController.game_time()) * 0.5) + sin((s + window.gameController.game_time()) * 2);
+        // const speed_factor = sin((s + TimeKeeper.accumulatedDeltaTime) * 0.5) + sin((s + TimeKeeper.accumulatedDeltaTime) * 2);
         // wind.angle += extrapolate_range_clamp(-1, angle_factor, 1, degreesToRadians(-4), degreesToRadians(4));
         // wind.speed *= extrapolate_range_clamp(-1, speed_factor, 1, 0.9, 1.05);
         //
@@ -649,7 +651,7 @@ export default class AirportModel {
     //  * @method setRunwayTimeout
     //  */
     // setRunwayTimeout() {
-    //     this.timeout.runway = window.gameController.game_timeout(this.updateRunway, Math.random() * 30, this);
+    //     this.timeout.runway = GameController.game_timeout(this.updateRunway, Math.random() * 30, this);
     // }
 
     /**
@@ -735,7 +737,6 @@ export default class AirportModel {
             return;
         }
 
-        // TODO: there is a lot of binding here, use => functions and this probably wont be an issue.
         // eslint-disable-next-line no-undef
         zlsa.atc.loadAsset({
             url: `assets/airports/terrain/${this.icao.toLowerCase()}.geojson`,
@@ -754,7 +755,7 @@ export default class AirportModel {
             console.error(`Unable to load airport/terrain/${this.icao}: ${textStatus}`);
 
             this.loading = false;
-            this.airport.current.set();
+            AirportController.current.set();
         });
     }
 
@@ -771,9 +772,9 @@ export default class AirportModel {
         }
 
         this.loading = true;
-        this.eventBus.trigger(EVENT.SHOULD_PAUSE_UPDATE_LOOP, false);
+        this.eventBus.trigger(EVENT.PAUSE_UPDATE_LOOP, false);
 
-        if (airportJson) {
+        if (airportJson && airportJson.icao.toLowerCase() === this.icao) {
             this.onLoadIntialAirportFromJson(airportJson);
 
             return;
@@ -812,7 +813,7 @@ export default class AirportModel {
         console.error(`Unable to load airport/${this.icao}: ${textStatus}`);
 
         this.loading = false;
-        this.airport.current.set();
+        AirportController.current.set();
     }
 
     /**

@@ -1,29 +1,27 @@
-import sinon from 'sinon';
-
 import AirportController from '../../src/assets/scripts/client/airport/AirportController';
 import AirportModel from '../../src/assets/scripts/client/airport/AirportModel';
 import StaticPositionModel from '../../src/assets/scripts/client/base/StaticPositionModel';
-import { navigationLibraryFixture } from '../fixtures/navigationLibraryFixtures';
 import { AIRPORT_JSON_KLAS_MOCK } from '../airport/_mocks/airportJsonMock';
 import { AIRPORT_LOAD_LIST_MOCK } from '../airport/_mocks/airportLoadListMocks';
 
-const updateRunStub = sinon.stub();
-const onAirportChangeStub = sinon.stub();
+export function createAirportControllerFixture() {
+    AirportController.reset();
 
-export const airportControllerFixture = new AirportController(
-    AIRPORT_JSON_KLAS_MOCK,
-    AIRPORT_LOAD_LIST_MOCK,
-    updateRunStub,
-    onAirportChangeStub,
-    navigationLibraryFixture
-);
+    AirportController.init('klas', AIRPORT_JSON_KLAS_MOCK, AIRPORT_LOAD_LIST_MOCK);
+}
 
-export const airportModelFixture = new AirportModel(
-    AIRPORT_JSON_KLAS_MOCK,
-    updateRunStub,
-    onAirportChangeStub,
-    navigationLibraryFixture
-);
+export function resetAirportControllerFixture() {
+    AirportController.reset();
+}
+
+export const airportControllerKlasFixture = AirportController;
+airportControllerKlasFixture.init('klas', AIRPORT_JSON_KLAS_MOCK, AIRPORT_LOAD_LIST_MOCK);
+airportControllerKlasFixture.airport_set('klas', AIRPORT_JSON_KLAS_MOCK);
+
+export const airportModelFixture = new AirportModel(AIRPORT_JSON_KLAS_MOCK);
+export function createAirportModelFixture() {
+    return new AirportModel(AIRPORT_JSON_KLAS_MOCK);
+}
 
 // airport position for KSFO
 export const airportPositionFixtureKSFO = new StaticPositionModel(['N37.6195', 'W122.3738333', '13ft'], null, 13.7);

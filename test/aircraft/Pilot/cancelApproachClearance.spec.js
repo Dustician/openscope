@@ -1,38 +1,80 @@
 import ava from 'ava';
-
-import Pilot from '../../../src/assets/scripts/client/aircraft/Pilot/Pilot';
+import AircraftModel from '../../../src/assets/scripts/client/aircraft/AircraftModel';
+import { airportModelFixture } from '../../fixtures/airportFixtures';
 import {
-    fmsArrivalFixture,
-    modeControllerFixture
-} from '../../fixtures/aircraftFixtures';
+    createNavigationLibraryFixture,
+    resetNavigationLibraryFixture
+} from '../../fixtures/navigationLibraryFixtures';
+import { ARRIVAL_AIRCRAFT_INIT_PROPS_MOCK } from '../_mocks/aircraftMocks';
 
-const headingMock = 3.141592653589793;
+const approachTypeMock = 'ils';
+const runwayModelMock = airportModelFixture.getRunway('19L');
 const speedMock = 190;
-const airportElevationMock = 11;
+
+
+ava.beforeEach(() => {
+    createNavigationLibraryFixture();
+});
+
+ava.afterEach(() => {
+    resetNavigationLibraryFixture();
+});
+
+ava('.cancelApproachClearance() returns early if #hasApproachClearance is false', (t) => {
+    const aircraftModel = new AircraftModel(ARRIVAL_AIRCRAFT_INIT_PROPS_MOCK);
+    const result = aircraftModel.pilot.cancelApproachClearance(aircraftModel);
+    const expectedResult = [false, 'we have no approach clearance to cancel!'];
+
+    t.deepEqual(result, expectedResult);
+});
 
 ava('.cancelApproachClearance() sets the correct modes and values in the Mcp', (t) => {
-    const pilot = new Pilot(modeControllerFixture, fmsArrivalFixture);
+    const nextAltitudeMock = 4000;
+    const nextHeadingDegreesMock = 250;
+    const shouldExpediteDescentMock = false;
+    const shouldUseSoftCeilingMock = false;
+    const aircraftModel = new AircraftModel(ARRIVAL_AIRCRAFT_INIT_PROPS_MOCK);
 
-    pilot.cancelApproachClearance(headingMock, speedMock, airportElevationMock);
+    aircraftModel.pilot.maintainAltitude(
+        nextAltitudeMock,
+        shouldExpediteDescentMock,
+        shouldUseSoftCeilingMock,
+        airportModelFixture,
+        aircraftModel
+    );
+    aircraftModel.pilot.maintainHeading(aircraftModel, nextHeadingDegreesMock, null, false);
+    aircraftModel.pilot.maintainSpeed(speedMock, aircraftModel);
+    aircraftModel.pilot.conductInstrumentApproach(approachTypeMock, runwayModelMock);
+    aircraftModel.pilot.cancelApproachClearance(aircraftModel);
 
-    t.true(pilot._mcp.altitudeMode === 'HOLD');
-    t.true(pilot._mcp.altitude === 1100);
-    t.true(pilot._mcp.headingMode === 'HOLD');
-    t.true(pilot._mcp.heading === headingMock);
-    t.true(pilot._mcp.speedMode === 'HOLD');
-    t.true(pilot._mcp.speed === 190);
+    t.true(aircraftModel.pilot._mcp.altitudeMode === 'HOLD');
+    t.true(aircraftModel.pilot._mcp.altitude === nextAltitudeMock);
+    t.true(aircraftModel.pilot._mcp.headingMode === 'HOLD');
+    t.true(aircraftModel.pilot._mcp.heading === aircraftModel.heading);
+    t.true(aircraftModel.pilot._mcp.speedMode === 'HOLD');
+    t.true(aircraftModel.pilot._mcp.speed === speedMock);
 });
 
 ava('.cancelApproachClearance() returns a success message when finished', (t) => {
+    const aircraftModel = new AircraftModel(ARRIVAL_AIRCRAFT_INIT_PROPS_MOCK);
     const expectedResult = [
         true,
-        {
-            log: 'cancel approach clearance, fly present heading, maintain 1100',
-            say: 'cancel approach clearance, fly present heading, maintain one thousand one hundred'
-        }
+        'cancel approach clearance, fly present heading, maintain last assigned altitude and speed'
     ];
-    const pilot = new Pilot(modeControllerFixture, fmsArrivalFixture);
-    const result = pilot.cancelApproachClearance(headingMock, speedMock, airportElevationMock);
+
+    aircraftModel.pilot.conductInstrumentApproach(approachTypeMock, runwayModelMock);
+
+    const result = aircraftModel.pilot.cancelApproachClearance(aircraftModel);
 
     t.deepEqual(result, expectedResult);
+});
+
+ava('.cancelApproachClearance() sets #hasApproachClearance to false', (t) => {
+    const aircraftModel = new AircraftModel(ARRIVAL_AIRCRAFT_INIT_PROPS_MOCK);
+
+    aircraftModel.pilot.hasApproachClearance = true;
+
+    aircraftModel.pilot.cancelApproachClearance(aircraftModel);
+
+    t.false(aircraftModel.pilot.hasApproachClearance);
 });

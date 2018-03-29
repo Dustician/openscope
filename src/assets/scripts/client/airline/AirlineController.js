@@ -1,6 +1,7 @@
 import _isNil from 'lodash/isNil';
 import AirlineCollection from './AirlineCollection';
 import AirlineModel from './AirlineModel';
+import { INVALID_INDEX } from '../constants/globalConstants';
 
 /**
  * Controller for all things Airline
@@ -99,7 +100,7 @@ export default class AirlineController {
     }
 
     /**
-     * Reset session specific class properties
+     * Reset session specific instance properties
      *
      * Used when changing airports. Clears activeFlightNumbers and
      * any other properties specific to a current session at a
@@ -121,8 +122,6 @@ export default class AirlineController {
      * @returns {boolean}
      */
     _isActiveFlightNumber(flightNumber) {
-        const invalidIndex = -1;
-
-        return this.flightNumbers.indexOf(flightNumber) !== invalidIndex;
+        return this.flightNumbers.indexOf(flightNumber) !== INVALID_INDEX;
     }
 }
